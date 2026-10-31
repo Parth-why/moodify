@@ -11,11 +11,11 @@ import { appState } from './state/appState.js';
 import { AIPrivacyGuard } from './services/ai/privacyGuard.js';
 import { authService } from './services/auth/authService.js';
 import { renderHeader } from './components/Header.js';
-import { renderMoodSelector } from './components/MoodSelector.js';
-import { renderAISuggestionPanel } from './components/AISuggestionPanel.js';
-import { renderAudioSliders } from './components/AudioSliders.js';
-import { renderTrackGrid } from './components/TrackGrid.js';
 import { renderPlayerBar } from './components/PlayerBar.js';
+import { renderHomeView } from './views/HomeView.js';
+import { renderUniverseView } from './views/UniverseView.js';
+import { renderJourneysView } from './views/JourneysView.js';
+import { renderDiscoverView } from './views/DiscoverView.js';
 import { setupMoodSenseModal } from './components/MoodSenseModal.js';
 import { setupSpotifyModal } from './components/SpotifyModal.js';
 import { setupAuthModal } from './components/AuthModal.js';
@@ -71,26 +71,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 3. Mount UI Components
+  // 3. Mount Header and Sticky Player Bar
   const headerContainer = document.getElementById('header-container');
   if (headerContainer) renderHeader(headerContainer);
-
-  const moodSelectorContainer = document.getElementById('mood-selector-container');
-  if (moodSelectorContainer) renderMoodSelector(moodSelectorContainer);
-
-  const aiSuggestionContainer = document.getElementById('ai-suggestion-container');
-  if (aiSuggestionContainer) renderAISuggestionPanel(aiSuggestionContainer);
-
-  const audioSlidersContainer = document.getElementById('audio-sliders-container');
-  if (audioSlidersContainer) renderAudioSliders(audioSlidersContainer);
-
-  const trackGridContainer = document.getElementById('track-grid-container');
-  if (trackGridContainer) renderTrackGrid(trackGridContainer);
 
   const playerBarContainer = document.getElementById('player-bar-container');
   if (playerBarContainer) renderPlayerBar(playerBarContainer);
 
-  // 4. Setup Modals
+  // 4. Mount Active Screen View
+  const mainContent = document.getElementById('main-content');
+  const mountView = () => {
+    if (!mainContent) return;
+    mainContent.innerHTML = '';
+    const view = appState.currentView || 'home';
+
+    if (view === 'home') {
+      renderHomeView(mainContent);
+    } else if (view === 'library') {
+      renderUniverseView(mainContent);
+    } else if (view === 'journeys') {
+      renderJourneysView(mainContent);
+    } else if (view === 'discover') {
+      renderDiscoverView(mainContent);
+    }
+  };
+
+  mountView();
+  appState.on('viewChange', () => {
+    mountView();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // 5. Setup Modals
   setupMoodSenseModal();
   setupSpotifyModal();
   setupAuthModal();

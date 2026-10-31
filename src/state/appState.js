@@ -17,7 +17,20 @@ class AppState {
     this.isPlaying = false;
     this.activeSuggestion = null;
     this.favorites = this._loadFavorites();
+    this.currentView = this._loadInitialView();
+    this.savedJourneys = this._loadSavedJourneys();
     this.listeners = new Map();
+
+    // Browser back/forward navigation support
+    if (typeof window !== 'undefined') {
+      window.addEventListener('hashchange', () => {
+        const h = window.location.hash.slice(1).toLowerCase();
+        if (['home', 'library', 'journeys', 'discover'].includes(h) && h !== this.currentView) {
+          this.currentView = h;
+          this.emit('viewChange', h);
+        }
+      });
+    }
 
     // Subscribe to audio player events
     audioPlayer.subscribe((event, data) => {
@@ -37,6 +50,49 @@ class AppState {
     } catch {
       return [];
     }
+  }
+
+  _loadInitialView() {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const h = window.location.hash.slice(1).toLowerCase();
+      if (['home', 'library', 'journeys', 'discover'].includes(h)) return h;
+    }
+    return 'home';
+  }
+
+  setCurrentView(view) {
+    if (['home', 'library', 'journeys', 'discover'].includes(view)) {
+      this.currentView = view;
+      if (typeof window !== 'undefined') {
+        window.location.hash = view;
+      }
+      this.emit('viewChange', view);
+    }
+  }
+
+  _loadSavedJourneys() {
+    try {
+      return JSON.parse(localStorage.getItem('moodify_saved_journeys') || '[]');
+    } catch {
+      return [];
+    }
+  }
+
+  saveJourney(journey) {
+    if (!journey || !journey.id) return;
+    this.savedJourneys = [journey, ...this.savedJourneys.filter(j => j.id !== journey.id)];
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('moodify_saved_journeys', JSON.stringify(this.savedJourneys));
+    }
+    this.emit('journeySaved', journey);
+  }
+
+  deleteJourney(journeyId) {
+    this.savedJourneys = this.savedJourneys.filter(j => j.id !== journeyId);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('moodify_saved_journeys', JSON.stringify(this.savedJourneys));
+    }
+    this.emit('journeyDeleted', journeyId);
   }
 
   toggleFavorite(trackId) {

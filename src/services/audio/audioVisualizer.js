@@ -13,8 +13,8 @@ export class AudioVisualizer {
     this.ctx = canvasElement.getContext('2d');
     this.animationId = null;
     this.isRunning = false;
-    this.primaryColor = '#00F0FF';
-    this.secondaryColor = '#A855F7';
+    this.primaryColor = '#67D5F5';
+    this.secondaryColor = '#A78BFA';
     this.bufferLength = 32;
     this.dataArray = new Uint8Array(this.bufferLength);
   }
