@@ -222,6 +222,7 @@ CREATE POLICY "Users can delete their own custom moods"
 
 CREATE INDEX IF NOT EXISTS idx_moods_user ON public.moods(user_id);
 CREATE INDEX IF NOT EXISTS idx_moods_default ON public.moods(is_default);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_default_mood_name ON public.moods (name) WHERE is_default = true;
 
 -- ============================================================================
 -- 7. TRACK MOODS TABLE (Multiple Moods per Track)

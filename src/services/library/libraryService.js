@@ -249,26 +249,83 @@ export class LibraryService {
     // Persist to Supabase if authenticated
     const user = authService.getUser();
     if (user && isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('tracks').upsert({
-          user_id: user.id,
-          provider: track.provider || 'spotify',
-          provider_track_id: track.providerTrackId || track.spotifyId || track.id,
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          cover_url: track.cover,
-          duration_s: track.duration,
-          preview_url: track.previewUrl,
-          external_url: track.externalUrl,
-          user_notes: track.userNotes || ''
-        }, { onConflict: 'user_id,provider,provider_track_id' });
-      } catch (err) {
-        console.warn('[LibraryService] Supabase track upsert error:', err);
+      const { error: upsertErr } = await supabase.from('tracks').upsert({
+        user_id: user.id,
+        provider: track.provider || 'spotify',
+        provider_track_id: track.providerTrackId || track.spotifyId || track.id,
+        title: track.title,
+        artist: track.artist,
+        album: track.album || '',
+        cover_url: track.cover || '',
+        duration_s: track.duration || 0,
+        preview_url: track.previewUrl || null,
+        external_url: track.externalUrl || null,
+        user_notes: track.userNotes || ''
+      }, { onConflict: 'user_id,provider,provider_track_id' });
+
+      if (upsertErr) {
+        console.error('[LibraryService] Supabase track upsert error:', upsertErr);
+        throw new Error(`Database error saving track: ${upsertErr.message}`);
       }
     }
 
     return existingIndex < 0;
+  }
+
+  /**
+   * Loads personal library tracks for authenticated user from Supabase.
+   */
+  async loadLibraryFromSupabase(userId) {
+    if (!userId || !isSupabaseConfigured || !supabase) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('tracks')
+        .select('*')
+        .eq('user_id', userId)
+        .order('added_at', { ascending: false });
+
+      if (error) {
+        console.error('[LibraryService] Failed to load library from Supabase:', error);
+        throw error;
+      }
+
+      if (data) {
+        this.localTracks = data.map(t => ({
+          id: t.id,
+          provider: t.provider,
+          providerTrackId: t.provider_track_id,
+          title: t.title,
+          artist: t.artist,
+          album: t.album,
+          cover: t.cover_url || '/albums/lofi.jpg',
+          duration: t.duration_s,
+          previewUrl: t.preview_url,
+          externalUrl: t.external_url,
+          userNotes: t.user_notes,
+          addedAt: t.added_at,
+          mood: 'chill',
+          source: t.provider === 'spotify' ? 'spotify_api' : 'moodify_native'
+        }));
+        this._saveLocal(STORAGE_KEY_LIBRARY, this.localTracks);
+        this._emitChange();
+      }
+    } catch (err) {
+      console.warn('[LibraryService] Error loading library from Supabase:', err);
+    }
+  }
+
+  /**
+   * Clears in-memory library on user logout for strict multi-tenant isolation.
+   */
+  clearUserData() {
+    this.localTracks = [];
+    this.localPlaylists = [];
+    this.localSources = [];
+    this._saveLocal(STORAGE_KEY_LIBRARY, []);
+    this._saveLocal(STORAGE_KEY_PLAYLISTS, []);
+    this._saveLocal(STORAGE_KEY_SOURCES, []);
+    this._emitChange();
   }
 
   /**
@@ -321,10 +378,10 @@ export class LibraryService {
 
     const user = authService.getUser();
     if (user && isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('tracks').delete().eq('id', trackId).eq('user_id', user.id);
-      } catch (err) {
-        console.warn('[LibraryService] Supabase delete error:', err);
+      const { error } = await supabase.from('tracks').delete().eq('id', trackId).eq('user_id', user.id);
+      if (error) {
+        console.error('[LibraryService] Supabase delete error:', error);
+        throw new Error(`Database error removing track: ${error.message}`);
       }
     }
 

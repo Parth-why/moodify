@@ -87,24 +87,25 @@ export class MoodService {
     const user = authService.getUser();
 
     if (user && isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('moods')
-          .select('*')
-          .order('created_at', { ascending: true });
+      const { data, error } = await supabase
+        .from('moods')
+        .select('*')
+        .order('created_at', { ascending: true });
 
-        if (!error && data && data.length > 0) {
-          return data.map(m => ({
-            id: m.id,
-            name: m.name,
-            category: m.category,
-            color: m.color,
-            emoji: this._getEmojiForMood(m.name),
-            isDefault: m.is_default
-          }));
-        }
-      } catch (err) {
-        console.warn('[MoodService] Remote moods fetch error, using local fallback:', err);
+      if (error) {
+        console.error('[MoodService] Failed to fetch moods from Supabase:', error);
+        throw new Error(`Database error fetching moods: ${error.message}`);
+      }
+
+      if (data && data.length > 0) {
+        return data.map(m => ({
+          id: m.id,
+          name: m.name,
+          category: m.category,
+          color: m.color,
+          emoji: this._getEmojiForMood(m.name),
+          isDefault: m.is_default
+        }));
       }
     }
 
@@ -138,7 +139,10 @@ export class MoodService {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[MoodService] Failed to create custom mood in Supabase:', error);
+        throw new Error(`Database error creating custom mood: ${error.message}`);
+      }
       const created = {
         id: data.id,
         name: data.name,
@@ -183,7 +187,10 @@ export class MoodService {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[MoodService] Failed to update custom mood in Supabase:', error);
+        throw new Error(`Database error updating mood: ${error.message}`);
+      }
       this._emitChange();
       return data;
     } else {
@@ -212,7 +219,10 @@ export class MoodService {
         .eq('id', moodId)
         .eq('user_id', user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('[MoodService] Failed to delete custom mood from Supabase:', error);
+        throw new Error(`Database error deleting mood: ${error.message}`);
+      }
     } else {
       this.customMoods = this.customMoods.filter(m => m.id !== moodId);
       this._saveLocalCustomMoods();
@@ -222,9 +232,15 @@ export class MoodService {
 
   /**
    * Assigns multiple moods to a track (additive)
+   * Ensures the track exists in public.tracks before linking in public.track_moods.
+   * @param {string|Object} trackOrId
+   * @param {Array<string>} moodNames
    */
-  async assignMoodsToTrack(trackId, moodNames) {
-    if (!trackId || !Array.isArray(moodNames)) return;
+  async assignMoodsToTrack(trackOrId, moodNames) {
+    if (!trackOrId || !Array.isArray(moodNames)) return;
+
+    const trackId = typeof trackOrId === 'string' ? trackOrId : trackOrId.id;
+    const trackObj = typeof trackOrId === 'object' ? trackOrId : null;
 
     const current = new Set(this.trackMoodMap[trackId] || []);
     for (const m of moodNames) {
@@ -236,26 +252,115 @@ export class MoodService {
     const user = authService.getUser();
     if (user && isSupabaseConfigured && supabase) {
       try {
-        // Resolve mood IDs from names
-        const { data: dbMoods } = await supabase.from('moods').select('id, name');
+        // 1. Ensure track exists in public.tracks to get a valid UUID
+        const provider = trackObj?.provider || (trackId.startsWith('spotify') ? 'spotify' : 'moodify_native');
+        const providerTrackId = trackObj?.providerTrackId || trackObj?.spotifyId || trackId;
+        const title = trackObj?.title || trackId;
+        const artist = trackObj?.artist || 'MOODIFY Artist';
+
+        const { data: trackRow, error: trackErr } = await supabase
+          .from('tracks')
+          .upsert({
+            user_id: user.id,
+            provider,
+            provider_track_id: providerTrackId,
+            title,
+            artist,
+            album: trackObj?.album || '',
+            cover_url: trackObj?.cover || '',
+            duration_s: trackObj?.duration || 0,
+            preview_url: trackObj?.previewUrl || null,
+            external_url: trackObj?.externalUrl || null,
+            user_notes: trackObj?.userNotes || ''
+          }, { onConflict: 'user_id,provider,provider_track_id' })
+          .select('id')
+          .single();
+
+        if (trackErr) {
+          console.error('[MoodService] Failed to upsert track in Supabase:', trackErr);
+          throw new Error(`Database error upserting track: ${trackErr.message}`);
+        }
+
+        const dbTrackId = trackRow.id;
+
+        // 2. Resolve mood IDs from database
+        const { data: dbMoods, error: moodsErr } = await supabase.from('moods').select('id, name');
+        if (moodsErr) throw moodsErr;
+
         if (dbMoods) {
           for (const mName of moodNames) {
             const matched = dbMoods.find(dm => dm.name.toLowerCase() === mName.toLowerCase());
             if (matched) {
-              await supabase.from('track_moods').upsert({
+              const { error: tmErr } = await supabase.from('track_moods').upsert({
                 user_id: user.id,
-                track_id: trackId,
+                track_id: dbTrackId,
                 mood_id: matched.id,
                 assignment_source: 'user_assigned'
               }, { onConflict: 'track_id,mood_id' });
+
+              if (tmErr) {
+                console.error('[MoodService] Failed to upsert track_moods in Supabase:', tmErr);
+                throw tmErr;
+              }
             }
           }
         }
       } catch (err) {
-        console.warn('[MoodService] Failed to persist track_moods in database:', err);
+        console.error('[MoodService] Failed to persist track_moods in database:', err);
+        throw err;
       }
     }
 
+    this._emitChange();
+  }
+
+  /**
+   * Loads all track mood assignments for the active authenticated user from Supabase.
+   */
+  async loadTrackMoodsFromSupabase(userId) {
+    if (!userId || !isSupabaseConfigured || !supabase) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('track_moods')
+        .select('track_id, mood_id, tracks(provider_track_id), moods(name)')
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('[MoodService] Failed to load track moods from Supabase:', error);
+        return;
+      }
+
+      if (data) {
+        this.trackMoodMap = {};
+        for (const row of data) {
+          const trackKey = row.tracks?.provider_track_id || row.track_id;
+          const moodName = row.moods?.name;
+          if (trackKey && moodName) {
+            if (!this.trackMoodMap[trackKey]) {
+              this.trackMoodMap[trackKey] = [];
+            }
+            if (!this.trackMoodMap[trackKey].includes(moodName.toLowerCase())) {
+              this.trackMoodMap[trackKey].push(moodName.toLowerCase());
+            }
+          }
+        }
+        this._saveLocalTrackMoodMap();
+        this._emitChange();
+      }
+    } catch (err) {
+      console.warn('[MoodService] Error loading track moods from Supabase:', err);
+    }
+  }
+
+  /**
+   * Clears in-memory and local cache on user sign out for airtight isolation.
+   */
+  clearUserData() {
+    this.trackMoodMap = {};
+    this.customMoods = [];
+    this._saveLocalTrackMoodMap();
+    this._saveLocalCustomMoods();
     this._emitChange();
   }
 
