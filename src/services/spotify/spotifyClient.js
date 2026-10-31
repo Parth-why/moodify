@@ -21,6 +21,7 @@ export class SpotifyClient {
   constructor() {
     this.accessToken = typeof localStorage !== 'undefined' ? (localStorage.getItem('moodify_spotify_token') || null) : null;
     this.clientId = typeof localStorage !== 'undefined' ? (localStorage.getItem('moodify_spotify_client_id') || null) : null;
+    this.userProfile = null;
     this.isGuestMode = !this.accessToken;
   }
 
@@ -32,6 +33,7 @@ export class SpotifyClient {
         localStorage.setItem('moodify_spotify_token', this.accessToken);
       } else {
         localStorage.removeItem('moodify_spotify_token');
+        this.userProfile = null;
       }
     }
   }
@@ -45,6 +47,100 @@ export class SpotifyClient {
         localStorage.removeItem('moodify_spotify_client_id');
       }
     }
+  }
+
+  /**
+   * Performs an authenticated request to Spotify Web API with rate limit & error handling.
+   * @param {string} url
+   * @param {RequestInit} [options]
+   * @returns {Promise<Response>}
+   */
+  async fetchWithAuth(url, options = {}) {
+    if (!this.accessToken) {
+      throw new Error('Spotify is not connected. Access token missing.');
+    }
+
+    const headers = {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${this.accessToken}`
+    };
+
+    const res = await fetch(url, { ...options, headers });
+
+    if (res.status === 429) {
+      const retryAfter = res.headers.get('Retry-After') || '5';
+      const err = new Error(`Spotify rate limit exceeded. Retry after ${retryAfter}s.`);
+      err.status = 429;
+      err.retryAfter = parseInt(retryAfter, 10);
+      throw err;
+    }
+
+    return res;
+  }
+
+  /**
+   * Retrieves the current authenticated user's Spotify profile (/v1/me).
+   * @returns {Promise<Object>}
+   */
+  async getCurrentUserProfile() {
+    const res = await this.fetchWithAuth('https://api.spotify.com/v1/me');
+    if (!res.ok) {
+      const err = new Error(`Failed to fetch Spotify profile (${res.status}): ${res.statusText}`);
+      err.status = res.status;
+      throw err;
+    }
+    const profile = await res.json();
+    this.userProfile = {
+      id: profile.id,
+      displayName: profile.display_name || profile.id,
+      email: profile.email || null,
+      avatarUrl: profile.images?.[0]?.url || null,
+      product: profile.product || 'unknown',
+      uri: profile.uri,
+      externalUrl: profile.external_urls?.spotify || ''
+    };
+    return this.userProfile;
+  }
+
+  /**
+   * Fetches an individual track by its Spotify ID (/v1/tracks/{id}).
+   * @param {string} trackId
+   * @returns {Promise<Object>}
+   */
+  async getTrack(trackId) {
+    if (!trackId) throw new Error('Spotify track ID is required.');
+    const res = await this.fetchWithAuth(`https://api.spotify.com/v1/tracks/${trackId}`);
+
+    if (res.status === 404) {
+      const err = new Error(`Track ${trackId} not found or unavailable in this market.`);
+      err.status = 404;
+      throw err;
+    }
+
+    if (!res.ok) {
+      const err = new Error(`Failed to retrieve track from Spotify (${res.status}): ${res.statusText}`);
+      err.status = res.status;
+      throw err;
+    }
+
+    const t = await res.json();
+    return {
+      id: `spotify-${t.id}`,
+      provider: 'spotify',
+      providerTrackId: t.id,
+      title: t.name,
+      artist: (t.artists || []).map(a => a.name).join(', ') || 'Unknown Artist',
+      album: t.album?.name || 'Single',
+      cover: t.album?.images?.[0]?.url || '/albums/lofi.jpg',
+      duration: Math.round((t.duration_ms || 0) / 1000),
+      previewUrl: t.preview_url || null,
+      spotifyUri: t.uri,
+      externalUrl: t.external_urls?.spotify || `https://open.spotify.com/track/${t.id}`,
+      source: 'spotify_api',
+      mood: 'chill',
+      userMoodTags: ['chill'],
+      addedAt: new Date().toISOString()
+    };
   }
 
   /**
@@ -173,11 +269,7 @@ export class SpotifyClient {
       limit: '10'
     });
 
-    const res = await fetch(`https://api.spotify.com/v1/search?${params.toString()}`, {
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`
-      }
-    });
+    const res = await this.fetchWithAuth(`https://api.spotify.com/v1/search?${params.toString()}`);
 
     if (!res.ok) {
       throw new Error(`Spotify Search API error: ${res.status} ${res.statusText}`);

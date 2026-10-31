@@ -553,3 +553,4 @@ export function renderJourneysView(container) {
 
   render();
 }
+

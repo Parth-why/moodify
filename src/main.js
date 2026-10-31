@@ -51,13 +51,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Non-blocking URL check
   }
 
-  // 3. Handle Spotify OAuth PKCE Callback if redirected back
+  // 3. Handle Spotify OAuth PKCE Callback if redirected back, or restore session
   try {
     const handled = await spotifyAuth.handleRedirectCallback();
     if (handled) {
       showToast('Successfully connected to Spotify via PKCE!', 'success');
-      const headerBtnText = document.getElementById('spotify-connect-text');
-      if (headerBtnText) headerBtnText.textContent = 'Connected';
+    } else {
+      await spotifyAuth.init();
     }
   } catch (err) {
     showToast(err.message || 'Spotify authorization failed.', 'error');

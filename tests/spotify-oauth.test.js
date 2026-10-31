@@ -76,4 +76,52 @@ describe('MOODIFY Spotify PKCE Authorization Engine', () => {
     assert.ok(SPOTIFY_SCOPES.includes('user-read-private'));
     assert.ok(SPOTIFY_SCOPES.includes('user-read-email'));
   });
+
+  test('Produces friendly error message when user cancels Spotify OAuth', async () => {
+    const auth = new SpotifyAuth();
+    // Simulate window.location.search = '?error=access_denied&state=123'
+    global.window = {
+      location: {
+        search: '?error=access_denied&state=123',
+        origin: 'http://127.0.0.1:5173',
+        pathname: '/'
+      },
+      history: {
+        replaceState: () => {}
+      }
+    };
+
+    await assert.rejects(
+      async () => auth.handleRedirectCallback(),
+      /Spotify authorization was canceled by the user/
+    );
+
+    delete global.window;
+  });
+
+  test('Rejects invalid or mismatched OAuth state parameter', async () => {
+    const auth = new SpotifyAuth();
+    global.window = {
+      location: {
+        search: '?code=valid-code-123&state=evil-forged-state',
+        origin: 'http://127.0.0.1:5173',
+        pathname: '/'
+      },
+      history: {
+        replaceState: () => {}
+      }
+    };
+    global.sessionStorage = {
+      getItem: (key) => key === 'moodify_spotify_auth_state' ? 'real-saved-state' : 'verifier-123',
+      removeItem: () => {}
+    };
+
+    await assert.rejects(
+      async () => auth.handleRedirectCallback(),
+      /Invalid OAuth state parameter\. Potential CSRF attack detected/
+    );
+
+    delete global.window;
+    delete global.sessionStorage;
+  });
 });

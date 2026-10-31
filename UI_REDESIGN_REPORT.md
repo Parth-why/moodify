@@ -156,3 +156,4 @@ Executed `npm run build` with Vite:
 - **Desktop (> 1100px):** 6-column mood grid, 4-column discover grid, 2-column home layout, full 6-column universe table.
 - **Tablet (860px - 1100px):** 3-column mood grid, 2-column discover grid, condensed universe table.
 - **Mobile (< 580px):** Single-column stacked layouts, segmented mobile nav, full-width touch-friendly buttons, and compact sticky controls.
+

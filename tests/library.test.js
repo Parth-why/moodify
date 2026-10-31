@@ -112,4 +112,97 @@ describe('MOODIFY V1.5 Library Engine & Deduplication', () => {
     await service.removeTrack('rem-1');
     assert.strictEqual(service.localTracks.length, 0);
   });
+
+  test('Validates and rejects non-track Spotify links in individual import', async () => {
+    const service = new LibraryService();
+
+    // Playlist URL
+    await assert.rejects(
+      async () => service.importTrackByUrlOrUri('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M'),
+      /playlist link/
+    );
+
+    // Album URL
+    await assert.rejects(
+      async () => service.importTrackByUrlOrUri('https://open.spotify.com/album/4LH4d3cOWNNXdsqFd4G7By'),
+      /album link/
+    );
+
+    // Artist URL
+    await assert.rejects(
+      async () => service.importTrackByUrlOrUri('https://open.spotify.com/artist/06HL4z0CvFAxyc27GXpf02'),
+      /artist link/
+    );
+
+    // Invalid URL
+    await assert.rejects(
+      async () => service.importTrackByUrlOrUri('https://notspotify.com/song/12345'),
+      /Invalid Spotify track format/
+    );
+  });
+
+  test('Phase 4 Scenario: Deduplicates shared track across multiple playlists while preserving both sources', async () => {
+    const service = new LibraryService();
+    service.localTracks = [];
+    service.localSources = [];
+    service.localPlaylists = [
+      { id: 'pl-A', providerPlaylistId: 'A', name: 'Playlist A' },
+      { id: 'pl-B', providerPlaylistId: 'B', name: 'Playlist B' }
+    ];
+
+    // Scenario A: Import Playlist A containing Track X
+    const trackX = {
+      id: 'spotify-track-X',
+      providerTrackId: 'track-X-id',
+      title: 'Midnight Sun',
+      artist: 'Solar Fields',
+      album: 'Movements',
+      duration: 320
+    };
+    const addedXA = await service.addTrackToLibrary(trackX, 'A', 'Playlist A');
+    assert.strictEqual(addedXA, true);
+    assert.strictEqual(service.localTracks.length, 1);
+
+    // Scenario B: Import Playlist B containing Track X and Track Y
+    const trackXInPlaylistB = {
+      id: 'spotify-track-X',
+      providerTrackId: 'track-X-id',
+      title: 'Midnight Sun',
+      artist: 'Solar Fields',
+      album: 'Movements',
+      duration: 320
+    };
+    const trackY = {
+      id: 'spotify-track-Y',
+      providerTrackId: 'track-Y-id',
+      title: 'Starlight',
+      artist: 'Muse',
+      album: 'Black Holes',
+      duration: 240
+    };
+
+    const addedXB = await service.addTrackToLibrary(trackXInPlaylistB, 'B', 'Playlist B');
+    const addedYB = await service.addTrackToLibrary(trackY, 'B', 'Playlist B');
+
+    // Expected:
+    // Track X exists once
+    assert.strictEqual(addedXB, false, 'Track X should not be duplicated');
+    assert.strictEqual(addedYB, true, 'Track Y is new and should be added');
+    assert.strictEqual(service.localTracks.length, 2, 'Total unique tracks must be exactly 2');
+
+    // Track X has two source playlist relationships
+    const sourcesX = service.getSourcePlaylistsForTrack('spotify-track-X');
+    assert.ok(sourcesX.includes('Playlist A'));
+    assert.ok(sourcesX.includes('Playlist B'));
+
+    // Track Y has one source playlist relationship
+    const sourcesY = service.getSourcePlaylistsForTrack('spotify-track-Y');
+    assert.strictEqual(sourcesY.length, 1);
+    assert.ok(sourcesY.includes('Playlist B'));
+
+    // Reimporting Playlist A does not create duplicate tracks or sources
+    const reimportedXA = await service.addTrackToLibrary(trackX, 'A', 'Playlist A');
+    assert.strictEqual(reimportedXA, false);
+    assert.strictEqual(service.localTracks.length, 2);
+  });
 });

@@ -284,3 +284,4 @@ export function renderDiscoverView(container) {
   render();
   appState.on('playbackChange', render);
 }
+

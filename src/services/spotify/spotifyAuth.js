@@ -36,6 +36,7 @@ export class SpotifyAuth {
   constructor() {
     this.clientId = (
       import.meta.env?.VITE_SPOTIFY_CLIENT_ID || 
+      (typeof process !== 'undefined' && process.env?.VITE_SPOTIFY_CLIENT_ID) ||
       (typeof localStorage !== 'undefined' ? localStorage.getItem('moodify_spotify_client_id') : '') || 
       ''
     ).trim();
@@ -44,7 +45,8 @@ export class SpotifyAuth {
   }
 
   getRedirectUri() {
-    const envUri = import.meta.env?.VITE_SPOTIFY_REDIRECT_URI;
+    const envUri = import.meta.env?.VITE_SPOTIFY_REDIRECT_URI || 
+      (typeof process !== 'undefined' && process.env?.VITE_SPOTIFY_REDIRECT_URI);
     if (envUri) return envUri.trim();
     if (typeof window !== 'undefined' && window.location) {
       return `${window.location.origin}${window.location.pathname}`;
@@ -152,6 +154,9 @@ export class SpotifyAuth {
 
     if (error) {
       this._cleanUrlParams();
+      if (error === 'access_denied') {
+        throw new Error('Spotify authorization was canceled by the user.');
+      }
       throw new Error(`Spotify Authorization failed: ${error}`);
     }
 
@@ -159,7 +164,7 @@ export class SpotifyAuth {
 
     // Validate CSRF state
     const savedState = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(STORAGE_KEYS.AUTH_STATE) : null;
-    if (savedState && state !== savedState) {
+    if (!savedState || state !== savedState) {
       this._cleanUrlParams();
       throw new Error('Invalid OAuth state parameter. Potential CSRF attack detected.');
     }
@@ -228,18 +233,64 @@ export class SpotifyAuth {
       }
     }
 
+    // Fetch user profile from Spotify /v1/me
+    let spotifyUserId = null;
+    try {
+      const profile = await spotifyClient.getCurrentUserProfile();
+      spotifyUserId = profile?.id || null;
+    } catch (err) {
+      console.warn('[SpotifyAuth] Could not fetch profile immediately:', err.message);
+    }
+
     // If user is authenticated in Supabase, update connection status
     const user = authService.getUser();
     if (user && isSupabaseConfigured && supabase) {
       try {
         await supabase.from('spotify_connections').upsert({
           user_id: user.id,
+          spotify_user_id: spotifyUserId,
           connection_status: 'connected',
           connected_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
       } catch (err) {
         console.warn('[SpotifyAuth] Failed to update spotify_connections table:', err);
       }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('moodify:spotifyConnectionChanged', {
+        detail: { connected: true, profile: spotifyClient.userProfile }
+      }));
+    }
+  }
+
+  /**
+   * Initializes auth state, verifies token validity and restores profile session on refresh
+   */
+  async init() {
+    if (!spotifyClient.accessToken) return;
+
+    // Check token expiration
+    const expiryStr = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY) : null;
+    if (expiryStr && Date.now() > Number(expiryStr)) {
+      console.info('[SpotifyAuth] Access token expired, attempting automatic refresh...');
+      await this.refreshAccessToken();
+    } else {
+      // Validate token with profile fetch
+      try {
+        await spotifyClient.getCurrentUserProfile();
+      } catch (err) {
+        if (err.status === 401) {
+          console.info('[SpotifyAuth] Stored token rejected (401), refreshing...');
+          await this.refreshAccessToken();
+        }
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('moodify:spotifyConnectionChanged', {
+        detail: { connected: !!spotifyClient.accessToken, profile: spotifyClient.userProfile }
+      }));
     }
   }
 
@@ -282,6 +333,7 @@ export class SpotifyAuth {
    */
   async disconnect() {
     spotifyClient.setAccessToken(null);
+    spotifyClient.userProfile = null;
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
       sessionStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
@@ -299,12 +351,19 @@ export class SpotifyAuth {
         console.warn('[SpotifyAuth] Failed to update disconnect state:', err);
       }
     }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('moodify:spotifyConnectionChanged', {
+        detail: { connected: false, profile: null }
+      }));
+    }
   }
 
   _cleanUrlParams() {
     if (typeof window !== 'undefined' && window.history && window.location) {
       const cleanUrl = window.location.origin + window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
+      const docTitle = typeof document !== 'undefined' ? document.title : '';
+      window.history.replaceState({}, docTitle, cleanUrl);
     }
   }
 }

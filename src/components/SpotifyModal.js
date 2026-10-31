@@ -54,6 +54,30 @@ export function setupSpotifyModal() {
             <button id="btn-close-spotify-modal" class="modal-close-btn" aria-label="Close modal">✕</button>
           </div>
 
+          <!-- Connected Profile Card if Authenticated -->
+          ${isConnected ? `
+            <div class="spotify-connected-profile glass-card" style="margin-bottom: 16px; padding: 14px 16px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; gap: 14px; background: rgba(30, 215, 96, 0.08); border: 1px solid rgba(30, 215, 96, 0.25);">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <img 
+                  src="${spotifyClient.userProfile?.avatarUrl || 'https://api.dicebear.com/7.x/identicon/svg?seed=' + (spotifyClient.userProfile?.id || 'spotify')}" 
+                  alt="Avatar" 
+                  style="width: 42px; height: 42px; border-radius: 50%; object-fit: cover; background: #000;"
+                />
+                <div>
+                  <h4 style="font-size: 0.92rem; font-weight: 700; color: #fff; margin-bottom: 2px;">
+                    ${spotifyClient.userProfile?.displayName || 'Connected Account'}
+                  </h4>
+                  <span style="font-size: 0.74rem; color: #94a3b8;">
+                    Spotify ID: <strong style="color: #1ed760;">${spotifyClient.userProfile?.id || 'Active'}</strong> • Plan: <strong style="text-transform: capitalize;">${spotifyClient.userProfile?.product || 'Active'}</strong>
+                  </span>
+                </div>
+              </div>
+              <button type="button" id="btn-disconnect-spotify-top" class="btn-secondary btn-small" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">
+                Disconnect
+              </button>
+            </div>
+          ` : ''}
+
           <!-- OAuth PKCE Configuration Card -->
           <div class="oauth-setup-box glass-card" style="margin-bottom: 16px; padding: 14px; border-radius: 10px;">
             <div class="notice-badge" style="color: #1ed760; margin-bottom: 8px;">
@@ -198,21 +222,20 @@ export function setupSpotifyModal() {
     }
 
     // Disconnect handler
-    const disconnectBtn = modalEl.querySelector('#btn-disconnect-spotify');
-    if (disconnectBtn) {
-      disconnectBtn.addEventListener('click', async () => {
-        await spotifyAuth.disconnect();
-        const headerBtnText = document.getElementById('spotify-connect-text');
-        if (headerBtnText) {
-          headerBtnText.textContent = 'Spotify';
-        }
-        showToast('Disconnected from Spotify.', 'info');
-        appState.setMood(appState.currentMood);
-        closeModal();
-      });
-    }
+    const handleDisconnect = async () => {
+      await spotifyAuth.disconnect();
+      showToast('Disconnected from Spotify.', 'info');
+      appState.setMood(appState.currentMood);
+      closeModal();
+    };
+
+    modalEl.querySelector('#btn-disconnect-spotify')?.addEventListener('click', handleDisconnect);
+    modalEl.querySelector('#btn-disconnect-spotify-top')?.addEventListener('click', handleDisconnect);
   };
 
   window.addEventListener('moodify:openSpotifyModal', openModal);
+  window.addEventListener('moodify:spotifyConnectionChanged', () => {
+    if (modalEl.innerHTML.trim()) renderModal();
+  });
 }
 

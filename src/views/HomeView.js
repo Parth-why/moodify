@@ -293,3 +293,4 @@ export function renderHomeView(container) {
   appState.on('playbackChange', render);
   libraryService.subscribe(render);
 }
+
