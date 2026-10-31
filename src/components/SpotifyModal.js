@@ -8,7 +8,9 @@
  */
 
 import { spotifyClient } from '../services/spotify/spotifyClient.js';
+import { spotifyAuth } from '../services/spotify/spotifyAuth.js';
 import { appState } from '../state/appState.js';
+import { showToast } from './Toast.js';
 
 export function setupSpotifyModal() {
   let modalEl = document.getElementById('spotify-modal-root');
@@ -28,10 +30,12 @@ export function setupSpotifyModal() {
 
   const renderModal = () => {
     const isConnected = !!spotifyClient.accessToken;
+    const redirectUri = spotifyAuth.getRedirectUri();
+    const currentClientId = spotifyAuth.clientId || '';
 
     modalEl.innerHTML = `
       <div class="modal-backdrop animate-fade-in" id="spotify-backdrop">
-        <div class="modal-dialog glass-card-strong animate-scale-up" role="dialog" aria-modal="true" aria-labelledby="spotify-modal-title">
+        <div class="modal-dialog glass-card-strong animate-scale-up" role="dialog" aria-modal="true" aria-labelledby="spotify-modal-title" style="max-width: 580px;">
           
           <div class="modal-header">
             <div class="header-title-box">
@@ -41,7 +45,7 @@ export function setupSpotifyModal() {
                 </svg>
               </div>
               <div>
-                <h3 id="spotify-modal-title" class="modal-title">Spotify Integration & Isolation</h3>
+                <h3 id="spotify-modal-title" class="modal-title">Spotify OAuth & Integration</h3>
                 <span class="status-indicator-pill ${isConnected ? 'connected' : 'guest'}">
                   ${isConnected ? '● Connected via Web API' : '● Standalone Curated Mode'}
                 </span>
@@ -50,61 +54,94 @@ export function setupSpotifyModal() {
             <button id="btn-close-spotify-modal" class="modal-close-btn" aria-label="Close modal">✕</button>
           </div>
 
+          <!-- OAuth PKCE Configuration Card -->
+          <div class="oauth-setup-box glass-card" style="margin-bottom: 16px; padding: 14px; border-radius: 10px;">
+            <div class="notice-badge" style="color: #1ed760; margin-bottom: 8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span style="font-weight: 700; font-size: 0.8rem;">SECURE PKCE AUTHORIZATION (ZERO SECRETS IN BROWSER)</span>
+            </div>
+            <p style="font-size: 0.78rem; color: var(--text-secondary); line-height: 1.45;">
+              To connect your real Spotify account, configure your application in the <strong>Spotify Developer Dashboard</strong>:
+            </p>
+            <div style="background: rgba(0,0,0,0.4); padding: 8px 12px; border-radius: 6px; margin: 8px 0; font-family: monospace; font-size: 0.76rem; border: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
+              <span><strong>Redirect URI:</strong> <code id="display-redirect-uri" style="color: var(--accent-cyan);">${redirectUri}</code></span>
+              <button type="button" id="btn-copy-redirect" class="btn-text-link" style="font-size: 0.72rem;">Copy</button>
+            </div>
+            <p style="font-size: 0.72rem; color: #94a3b8;">
+              1. Open <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener" style="color: #1ed760; text-decoration: underline;">Spotify Developer Dashboard</a>.<br/>
+              2. Select your app → <strong>Settings</strong> → add the Redirect URI above into <strong>Redirect URIs</strong>.<br/>
+              3. Paste your <strong>Client ID</strong> below and click <em>Authorize via Spotify</em>.
+            </p>
+          </div>
+
+          <!-- PKCE Auth Form -->
+          <form id="spotify-pkce-form" class="modal-form">
+            <div class="form-group">
+              <label for="spotify-client-id-input">Spotify Client ID:</label>
+              <input 
+                type="text" 
+                id="spotify-client-id-input" 
+                placeholder="e.g. 4f9810a0..."
+                value="${currentClientId}"
+                required
+              />
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+              <button type="submit" id="btn-start-pkce" class="btn-spotify btn-glow" style="flex: 1;">
+                <svg viewBox="0 0 24 24" fill="currentColor" style="width: 16px; height: 16px; margin-right: 6px;">
+                  <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                </svg>
+                Authorize with Spotify (PKCE)
+              </button>
+            </div>
+          </form>
+
+          <!-- Collapsible Manual Developer Token (Fallback) -->
+          <details style="margin-bottom: 16px; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 12px; font-size: 0.78rem;">
+            <summary style="cursor: pointer; color: var(--text-muted); font-weight: 600;">
+              Manual Developer Token (Optional Alternative)
+            </summary>
+            <div style="margin-top: 10px;">
+              <input 
+                type="password" 
+                id="manual-spotify-token" 
+                placeholder="Paste Bearer token from Spotify Console..." 
+                value="${spotifyClient.accessToken || ''}"
+                style="width: 100%; margin-bottom: 8px;"
+              />
+              <button type="button" id="btn-save-manual-token" class="btn-secondary btn-small">
+                Apply Manual Token
+              </button>
+            </div>
+          </details>
+
           <!-- Architecture & Data Isolation Notice -->
-          <div class="isolation-notice-box">
+          <div class="isolation-notice-box" style="margin-top: 0;">
             <div class="notice-badge">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
               </svg>
-              <span>AIR-GAPPED ARCHITECTURE & SPOTIFY POLICY COMPLIANCE</span>
+              <span>AIR-GAPPED ARCHITECTURE & SPOTIFY COMPLIANCE</span>
             </div>
-            <p>
-              <strong>Data Isolation Guarantee:</strong>
-              Moodify strictly prevents Spotify content, track names, artist identities, lyrics, and album art from ever being sent to external AI/ML services. AI services operate solely on non-Spotify user prompts and independent mood categories.
-            </p>
-            <p style="margin-top: 8px; font-size: 0.73rem; color: #94a3b8;">
-              <strong>Spotify February 2026 Migration & API Limitations:</strong><br/>
-              • Spotify deprecated <code style="color: #38bdf8;">/v1/audio-features</code> and <code style="color: #38bdf8;">/v1/recommendations</code>; Moodify does not analyze or derive algorithmic models from Spotify audio features.<br/>
-              • Full audio playback on web requires an active Spotify Premium subscription.<br/>
-              • Moodify never extracts or passes Spotify audio streams into Web Audio visualizer analysers.<br/>
-              • Inaccessible or private user playlists are never claimed to be imported.
+            <p style="font-size: 0.73rem; color: #94a3b8; line-height: 1.4;">
+              • Moodify never pipes Spotify audio streams into Web Audio visualizer analysers.<br/>
+              • Spotify metadata/tracks are never sent to external AI/ML services for training or inference.<br/>
+              • Mood recommendations rely on your own tags and independent classifications, not Spotify derived algorithms.
             </p>
           </div>
 
-          <!-- Token Configuration Form -->
-          <form id="spotify-config-form" class="modal-form">
-            <div class="form-group">
-              <label for="spotify-token-input">Spotify Access Token (Optional OAuth / Developer Token):</label>
-              <input 
-                type="password" 
-                id="spotify-token-input" 
-                placeholder="Paste Bearer token from Spotify Developer Dashboard..."
-                value="${spotifyClient.accessToken || ''}"
-              />
-              <span class="form-help-text">Leave blank to use Moodify's high-fidelity built-in catalog & Web Audio synthesizer.</span>
-            </div>
-
-            <div class="form-group">
-              <label for="spotify-client-id-input">Spotify Client ID (Optional):</label>
-              <input 
-                type="text" 
-                id="spotify-client-id-input" 
-                placeholder="e.g. 4f9810a0..."
-                value="${spotifyClient.clientId || ''}"
-              />
-            </div>
-
-            <div class="modal-footer">
-              ${isConnected ? `
-                <button type="button" id="btn-disconnect-spotify" class="btn-danger">
-                  Disconnect Spotify
-                </button>
-              ` : ''}
-              <button type="button" id="btn-cancel-spotify" class="btn-secondary">Close</button>
-              <button type="submit" class="btn-primary">Save Settings</button>
-            </div>
-          </form>
+          <div class="modal-footer" style="margin-top: 16px;">
+            ${isConnected ? `
+              <button type="button" id="btn-disconnect-spotify" class="btn-danger">
+                Disconnect Spotify
+              </button>
+            ` : ''}
+            <button type="button" id="btn-cancel-spotify" class="btn-secondary">Close</button>
+          </div>
 
         </div>
       </div>
@@ -117,36 +154,59 @@ export function setupSpotifyModal() {
       if (e.target.id === 'spotify-backdrop') closeModal();
     });
 
-    // Form submit
-    const form = modalEl.querySelector('#spotify-config-form');
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const tokenInput = modalEl.querySelector('#spotify-token-input');
-      const clientIdInput = modalEl.querySelector('#spotify-client-id-input');
-
-      spotifyClient.setAccessToken(tokenInput.value);
-      spotifyClient.setClientId(clientIdInput.value);
-
-      // Update header button text
-      const headerBtnText = document.getElementById('spotify-connect-text');
-      if (headerBtnText) {
-        headerBtnText.textContent = spotifyClient.accessToken ? 'Connected' : 'Spotify';
+    // Copy redirect URI
+    modalEl.querySelector('#btn-copy-redirect')?.addEventListener('click', () => {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(redirectUri);
+        showToast('Redirect URI copied to clipboard!', 'info');
       }
-
-      appState.setMood(appState.currentMood);
-      closeModal();
     });
 
-    // Disconnect
+    // PKCE form submit
+    const pkceForm = modalEl.querySelector('#spotify-pkce-form');
+    pkceForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const clientId = modalEl.querySelector('#spotify-client-id-input')?.value.trim();
+      if (!clientId) {
+        showToast('Please enter your Spotify Client ID.', 'error');
+        return;
+      }
+      try {
+        await spotifyAuth.initiateLogin(clientId);
+      } catch (err) {
+        showToast(err.message || 'Failed to initiate Spotify login.', 'error');
+      }
+    });
+
+    // Save manual token fallback
+    const saveManualBtn = modalEl.querySelector('#btn-save-manual-token');
+    if (saveManualBtn) {
+      saveManualBtn.addEventListener('click', () => {
+        const tokenVal = modalEl.querySelector('#manual-spotify-token')?.value.trim();
+        const clientVal = modalEl.querySelector('#spotify-client-id-input')?.value.trim();
+        spotifyClient.setAccessToken(tokenVal);
+        if (clientVal) spotifyAuth.setClientId(clientVal);
+        
+        const headerBtnText = document.getElementById('spotify-connect-text');
+        if (headerBtnText) {
+          headerBtnText.textContent = spotifyClient.accessToken ? 'Connected' : 'Spotify';
+        }
+        showToast('Spotify token updated.', 'success');
+        appState.setMood(appState.currentMood);
+        closeModal();
+      });
+    }
+
+    // Disconnect handler
     const disconnectBtn = modalEl.querySelector('#btn-disconnect-spotify');
     if (disconnectBtn) {
-      disconnectBtn.addEventListener('click', () => {
-        spotifyClient.setAccessToken(null);
-        spotifyClient.setClientId(null);
+      disconnectBtn.addEventListener('click', async () => {
+        await spotifyAuth.disconnect();
         const headerBtnText = document.getElementById('spotify-connect-text');
         if (headerBtnText) {
           headerBtnText.textContent = 'Spotify';
         }
+        showToast('Disconnected from Spotify.', 'info');
         appState.setMood(appState.currentMood);
         closeModal();
       });
@@ -155,3 +215,4 @@ export function setupSpotifyModal() {
 
   window.addEventListener('moodify:openSpotifyModal', openModal);
 }
+
