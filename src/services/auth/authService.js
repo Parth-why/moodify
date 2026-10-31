@@ -107,12 +107,24 @@ export class AuthService {
       });
 
       if (error) throw error;
-      this.currentUser = data.user;
 
-      if (data.user) {
-        await this.loadProfile(data.user.id);
+      // In Supabase, if email confirmation is required, data.user is returned with session = null.
+      // Unverified users must NOT be treated as authenticated until they confirm their email.
+      if (data.session) {
+        this.currentUser = data.user;
+        if (data.user) {
+          await this.loadProfile(data.user.id);
+        }
+      } else {
+        this.currentUser = null;
+        this.currentProfile = null;
       }
-      return { user: data.user, session: data.session };
+
+      return { 
+        user: data.user, 
+        session: data.session, 
+        needsConfirmation: !data.session 
+      };
     } else {
       // Standalone simulation for testing & offline mode
       const simulatedUser = {

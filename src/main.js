@@ -38,6 +38,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 2. Initialize Authentication Service & Persistent Session
   await authService.init();
 
+  // Check URL parameters for Auth callback error messages (e.g. expired confirmation link)
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash);
+    const authErrorDesc = urlParams.get('error_description') || hashParams.get('error_description');
+    if (authErrorDesc) {
+      showToast(decodeURIComponent(authErrorDesc.replace(/\+/g, ' ')), 'error');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  } catch {
+    // Non-blocking URL check
+  }
+
   // 3. Handle Spotify OAuth PKCE Callback if redirected back
   try {
     const handled = await spotifyAuth.handleRedirectCallback();

@@ -189,18 +189,27 @@ export function setupAuthModal() {
           showToast(`Welcome back, ${authService.getProfile()?.display_name || 'music lover'}!`, 'success');
           closeModal();
         } else if (activeTab === 'signup') {
-          await authService.signUp({ email, password, username, displayName });
-          showToast('Account created successfully! Let\'s personalize your experience.', 'success');
-          closeModal();
-          // Dispatch onboarding wizard trigger
-          window.dispatchEvent(new CustomEvent('moodify:openOnboarding'));
+          const result = await authService.signUp({ email, password, username, displayName });
+          if (result?.needsConfirmation) {
+            showToast('Account registered! Please check your inbox and confirm your email before signing in.', 'info');
+            openModal('signin');
+          } else {
+            showToast('Account created successfully! Let\'s personalize your experience.', 'success');
+            closeModal();
+            // Dispatch onboarding wizard trigger
+            window.dispatchEvent(new CustomEvent('moodify:openOnboarding'));
+          }
         } else if (activeTab === 'forgot') {
           await authService.resetPassword(email);
           showToast('Password reset link sent! Check your inbox.', 'info');
           openModal('signin');
         }
       } catch (err) {
-        errorMessage = err.message || 'Authentication failed. Please verify credentials.';
+        if (err.message && err.message.toLowerCase().includes('email not confirmed')) {
+          errorMessage = 'Your email address has not been verified yet. Please check your inbox and click the confirmation link before signing in.';
+        } else {
+          errorMessage = err.message || 'Authentication failed. Please verify credentials.';
+        }
         isLoading = false;
         renderModal();
       }
