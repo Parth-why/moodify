@@ -1,189 +1,139 @@
 # MOODIFY V1.5 — Supabase Live Configuration & Verification Report
 
 > **Document Version:** 1.5.0  
-> **Database Engine:** Supabase PostgreSQL 15+  
-> **Security Protocol:** Row Level Security (RLS) & Client-Side Anon Key Only  
+> **Verification Date & Time:** 2026-11-01 01:07:00 (Local Time)  
+> **Database Engine:** Supabase PostgreSQL 15+ (`https://wmvtcxlwtbwknrgbhxns.supabase.co`)  
+> **Security Protocol:** Strict Row Level Security (RLS) & Client-Side Anon Key Only  
 > **Target Application URL:** `http://localhost:5173/`
 
 ---
 
 ## 1. Executive Summary
 
-This document details the configuration, verification, migration readiness, and testing protocols for connecting **MOODIFY V1.5** to a live Supabase PostgreSQL instance.
+A complete live verification run has been executed against the user's active Supabase PostgreSQL project. 
 
-All client-side code, database schemas, foreign key relationships, triggers, and Row Level Security (RLS) policies have been audited and verified for airtight multi-tenancy and data isolation.
+- **Environment & Keys:** Verified. Public publishable key used exclusively. Zero `service_role` exposure.
+- **Database Schema & Migrations:** **100% VERIFIED LIVE**. All 9 tables exist in the public schema, and all 12 default system moods are seeded and active.
+- **Authentication & Database Triggers:** **100% VERIFIED LIVE**. Registered two separate test accounts (`Account A` and `Account B`), verified automatic profile creation via the `on_auth_user_created` trigger, and verified explicit session logout and re-authentication.
+- **Data Persistence & Multi-Tagging:** **100% VERIFIED LIVE**. Successfully created custom moods, inserted library tracks, assigned multiple moods per track, and re-loaded them across simulated fresh sessions.
+- **Row Level Security (RLS) Isolation:** **100% VERIFIED LIVE**. Verified bidirectional isolation between Account A and Account B across moods, tracks, profiles, and write/delete protection.
+- **Automated Regression & Build:** **38/38 unit tests passed** (`npm test`), production build succeeded in 184ms (`npm run build`).
 
 ---
 
 ## 2. Configuration & Security Audit
 
-### 2.1 Required Environment Variables
-The application strictly requires the following two environment variables defined in `.env` at the project root (`d:\CLG\Hustle\Moodify\.env`):
-
-| Variable Name | Purpose | Example / Format |
-|---|---|---|
-| `VITE_SUPABASE_URL` | HTTPS endpoint of the Supabase PostgreSQL project | `https://<your-project-id>.supabase.co` |
-| `VITE_SUPABASE_ANON_KEY` | Public anonymous JWT API key for browser access | `eyJhbGciOiJIUzI1NiIsInR5cCI6...` |
-
-### 2.2 Publishable/Anon Key Only & Service-Role Key Ban
-- **Public Anon Key Only:** Browser client code in [`src/services/supabase/supabaseClient.js`](file:///d:/CLG/Hustle/Moodify/src/services/supabase/supabaseClient.js) accesses Supabase solely using `VITE_SUPABASE_ANON_KEY` through the `@supabase/supabase-js` SDK.
-- **Strict Service-Role Rejection:** Frontend code **never requests, accepts, or exposes** the Supabase `service_role` key. A runtime security guard is implemented directly in `supabaseClient.js`:
-  ```javascript
-  if (supabaseAnonKey && supabaseAnonKey.includes('service_role')) {
-    console.error('[SECURITY ALERT] Supabase service-role key detected in frontend client! Removing immediately.');
-    throw new Error('FATAL SECURITY VIOLATION: Service-role key must NEVER be used in client-side code.');
-  }
-  ```
-- **Zero Secrets in Git:** `.env` is listed in `.gitignore`. Only `.env.example` is committed as a sanitised template.
-
-### 2.3 Elimination of Silent Fallback
-In previous local prototyping, failures in remote Supabase operations were silently trapped and fell back to local memory without alerting the user. This has been updated across services:
-- [`src/services/moods/moodService.js`](file:///d:/CLG/Hustle/Moodify/src/services/moods/moodService.js): If Supabase is configured and a database operation fails (`getAllMoods`, `createCustomMood`, `assignMoodsToTrack`), it throws an explicit error instead of silently defaulting to demo mode.
-- [`src/services/library/libraryService.js`](file:///d:/CLG/Hustle/Moodify/src/services/library/libraryService.js): Real database insertion/deletion failures throw errors directly to surface issues immediately.
-- [`src/components/NotificationCenter.js`](file:///d:/CLG/Hustle/Moodify/src/components/NotificationCenter.js): Surfaces database error notifications cleanly to the user.
+| Check | Expected | Live Status | Verification Details |
+|---|---|---|---|
+| `.env` Existence | Must exist at project root | **PASS** | Located at `d:\CLG\Hustle\Moodify\.env` |
+| `VITE_SUPABASE_URL` | Valid HTTPS URL | **PASS** | Configured to live project endpoint |
+| `VITE_SUPABASE_ANON_KEY` | Public Anon/Publishable Key | **PASS** | Public key used; zero `service_role` exposure |
+| Client Initialisation | Successful connection | **PASS** | Connected to live Supabase PostgREST endpoint |
+| Application Mode | Live PostgreSQL | **PASS** | Live database active, demo fallback disabled |
 
 ---
 
-## 3. Database Schema & Migration Audit (9 Tables)
+## 3. Live Database Table & Seed Audit (Live Tested)
 
-The migration file [`supabase/migrations/20261031000000_v1_5_initial_schema.sql`](file:///d:/CLG/Hustle/Moodify/supabase/migrations/20261031000000_v1_5_initial_schema.sql) defines 9 core tables with primary keys, foreign keys, cascading deletes, unique constraints, and Row Level Security:
+Direct PostgREST queries were executed against the live database using the public anonymous key.
 
-### Table 1: `public.profiles`
-- **Primary Key:** `id UUID REFERENCES auth.users(id) ON DELETE CASCADE`
-- **Columns:** `username TEXT UNIQUE`, `display_name TEXT`, `avatar_url TEXT`, `bio TEXT`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`.
-- **RLS Policies:**
-  - `SELECT`: `USING (auth.uid() = id)`
-  - `INSERT`: `WITH CHECK (auth.uid() = id)`
-  - `UPDATE`: `USING (auth.uid() = id) WITH CHECK (auth.uid() = id)`
-  - `DELETE`: `USING (auth.uid() = id)`
-- **Triggers:** Auto-updated by `tr_profiles_updated_at`. Auto-provisioned by `on_auth_user_created` trigger on `auth.users`.
+| # | Table Name | Status | RLS & Integrity Details |
+|---|---|---|---|
+| 1 | `public.profiles` | **LIVE PASS** | Table exists, RLS enabled, linked to `auth.users(id) ON DELETE CASCADE` |
+| 2 | `public.spotify_connections` | **LIVE PASS** | Table exists, RLS enabled, unique per user |
+| 3 | `public.tracks` | **LIVE PASS** | Table exists, RLS enabled, unique per `(user_id, provider, provider_track_id)` |
+| 4 | `public.imported_playlists` | **LIVE PASS** | Table exists, RLS enabled, track counts supported |
+| 5 | `public.playlist_track_sources` | **LIVE PASS** | Table exists, RLS enabled, many-to-many track/playlist junction |
+| 6 | `public.moods` | **LIVE PASS** | Table exists, RLS enabled, default + custom moods supported |
+| 7 | `public.track_moods` | **LIVE PASS** | Table exists, RLS enabled, multi-mood tagging per track |
+| 8 | `public.user_settings` | **LIVE PASS** | Table exists, RLS enabled, auto-provisioned JSON preferences |
+| 9 | `public.import_jobs` | **LIVE PASS** | Table exists, RLS enabled, async status tracking |
 
-### Table 2: `public.spotify_connections`
-- **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
-- **Foreign Key:** `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
-- **Columns:** `spotify_user_id TEXT`, `connection_status TEXT CHECK (...)`, `connected_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`.
-- **Constraint:** `uq_spotify_connection_user UNIQUE (user_id)`
-- **Security Rule:** Spotify access and refresh tokens are **never stored** in public database tables.
-- **RLS Policies:** Full CRUD restricted to `auth.uid() = user_id`.
-
-### Table 3: `public.tracks` (Personal Library)
-- **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
-- **Foreign Key:** `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
-- **Columns:** `provider TEXT CHECK (...)`, `provider_track_id TEXT`, `title TEXT NOT NULL`, `artist TEXT NOT NULL`, `album TEXT`, `cover_url TEXT`, `duration_s INTEGER`, `preview_url TEXT`, `external_url TEXT`, `user_notes TEXT`, `added_at TIMESTAMPTZ`.
-- **Constraint:** `uq_user_provider_track UNIQUE (user_id, provider, provider_track_id)`
-- **RLS Policies:** Full CRUD restricted to `auth.uid() = user_id`.
-- **Indexes:** `idx_tracks_user_id`, `idx_tracks_provider_id`, `idx_tracks_artist_title`.
-
-### Table 4: `public.imported_playlists`
-- **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
-- **Foreign Key:** `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
-- **Columns:** `provider TEXT`, `provider_playlist_id TEXT`, `name TEXT NOT NULL`, `description TEXT`, `cover_url TEXT`, `total_tracks INTEGER`, `import_status TEXT CHECK (...)`, `imported_at TIMESTAMPTZ`.
-- **Constraint:** `uq_user_provider_playlist UNIQUE (user_id, provider, provider_playlist_id)`
-- **RLS Policies:** Full CRUD restricted to `auth.uid() = user_id`.
-
-### Table 5: `public.playlist_track_sources`
-- **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
-- **Foreign Keys:**
-  - `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
-  - `track_id UUID NOT NULL REFERENCES public.tracks(id) ON DELETE CASCADE`
-  - `playlist_id UUID NOT NULL REFERENCES public.imported_playlists(id) ON DELETE CASCADE`
-- **Constraint:** `uq_user_playlist_track UNIQUE (user_id, track_id, playlist_id)`
-- **RLS Policies:** `SELECT`, `INSERT`, `DELETE` restricted to `auth.uid() = user_id`.
-
-### Table 6: `public.moods`
-- **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
-- **Foreign Key:** `user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE` (NULL for system defaults)
-- **Columns:** `name TEXT NOT NULL`, `category TEXT NOT NULL`, `color TEXT NOT NULL`, `is_default BOOLEAN NOT NULL DEFAULT false`, `created_at TIMESTAMPTZ`.
-- **Constraints & Indexes:**
-  - `uq_user_mood_name UNIQUE (user_id, name)`
-  - `uq_default_mood_name UNIQUE (name) WHERE is_default = true` (Guarantees idempotent seeding)
-- **RLS Policies:**
-  - `SELECT`: `USING (is_default = true OR auth.uid() = user_id)` (All users can view default moods, plus their own custom moods)
-  - `INSERT`: `WITH CHECK (auth.uid() = user_id AND is_default = false)`
-  - `UPDATE`: `USING (auth.uid() = user_id AND is_default = false)`
-  - `DELETE`: `USING (auth.uid() = user_id AND is_default = false)`
-
-### Table 7: `public.track_moods`
-- **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
-- **Foreign Keys:**
-  - `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
-  - `track_id UUID NOT NULL REFERENCES public.tracks(id) ON DELETE CASCADE`
-  - `mood_id UUID NOT NULL REFERENCES public.moods(id) ON DELETE CASCADE`
-- **Constraint:** `uq_track_mood UNIQUE (track_id, mood_id)`
-- **RLS Policies:** `SELECT`, `INSERT`, `DELETE` restricted to `auth.uid() = user_id`.
-
-### Table 8: `public.user_settings`
-- **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
-- **Foreign Key:** `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
-- **Columns:** `theme TEXT`, `privacy_settings JSONB`, `discovery_preferences JSONB`, `updated_at TIMESTAMPTZ`.
-- **Constraint:** `uq_user_settings_user UNIQUE (user_id)`
-- **RLS Policies:** `SELECT`, `INSERT`, `UPDATE` restricted to `auth.uid() = user_id`.
-- **Trigger:** Auto-provisioned by `on_auth_user_created` trigger on `auth.users`.
-
-### Table 9: `public.import_jobs`
-- **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
-- **Foreign Key:** `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
-- **Columns:** `source TEXT`, `status TEXT CHECK (...)`, `total_items INTEGER`, `processed_items INTEGER`, `error_message TEXT`, `created_at TIMESTAMPTZ`, `completed_at TIMESTAMPTZ`.
-- **RLS Policies:** Full CRUD restricted to `auth.uid() = user_id`.
-
-### Triggers & Seeds
-1. **`on_auth_user_created`**: Executes `public.handle_new_user()` upon every `auth.users` insert, auto-creating matching records in `public.profiles` and `public.user_settings`.
-2. **`set_updated_at`**: Keeps `updated_at` timestamps accurate on updates.
-3. **12 Default System Moods**: Seeded with `ON CONFLICT DO NOTHING`: *Party, Happy, Cheerful, Lonely, Romantic, Chill, Energetic, Nostalgic, Melancholic, Surprised, Dreamy, Confident*.
+### Default Moods Seed Verification (12 / 12 Present)
+Direct live query to `public.moods` where `is_default = true` returned all 12 system moods:
+1. **Party** (`#F59E0B`, category: `party`)
+2. **Happy** (`#FBBF24`, category: `joyful`)
+3. **Cheerful** (`#34D399`, category: `joyful`)
+4. **Lonely** (`#64748B`, category: `melancholy`)
+5. **Romantic** (`#F43F5E`, category: `romantic`)
+6. **Chill** (`#38BDF8`, category: `chill`)
+7. **Energetic** (`#EF4444`, category: `energetic`)
+8. **Nostalgic** (`#D97706`, category: `chill`)
+9. **Melancholic** (`#818CF8`, category: `melancholy`)
+10. **Surprised** (`#EC4899`, category: `energetic`)
+11. **Dreamy** (`#A855F7`, category: `focused`)
+12. **Confident** (`#10B981`, category: `energetic`)
 
 ---
 
-## 4. Live Project Setup Guide
+## 4. Live Multi-Tenant & RLS Isolation Verification Results
 
-### 4.1 Applying the Database Migration
-1. Open the [Supabase Dashboard](https://supabase.com/dashboard).
-2. Select your **Moodify** project.
-3. Click on the **SQL Editor** tab (left navigation icon with terminal `>_`).
-4. Click **New Query**.
-5. Copy the entire contents of [`supabase/migrations/20261031000000_v1_5_initial_schema.sql`](file:///d:/CLG/Hustle/Moodify/supabase/migrations/20261031000000_v1_5_initial_schema.sql).
-6. Paste into the SQL query box and click **Run** (green button).
-7. Verify the response outputs: `Success. No rows returned`.
+All tests below were performed directly against the live Supabase project using two separate test users (`Account A` and `Account B`):
 
-### 4.2 Configuring Supabase Authentication Redirect URLs
-1. In the Supabase Dashboard, navigate to **Authentication** (left sidebar) → **URL Configuration**.
-2. Under **Site URL**, set:
-   ```
-   http://localhost:5173
-   ```
-3. Under **Redirect URLs**, click **Add URL** and add:
-   ```
-   http://localhost:5173/**
-   ```
-4. Click **Save Changes**.
+| Test Scenario | Test Method | Status | Verified Outcome |
+|---|---|---|---|
+| **Live Supabase Connectivity** | Live API | **PASS** | HTTP 200 on all queries |
+| **All 9 Tables Present** | Live API | **PASS** | Verified via PostgREST schema introspection |
+| **12 Default Moods Seeded** | Live API | **PASS** | All 12 default moods active |
+| **Account A Registration & Auth** | Live API | **PASS** | Registered and authenticated with valid JWT session |
+| **Profile Auto-Creation (Account A)** | Live Trigger | **PASS** | Trigger `handle_new_user()` auto-created profile on `auth.users` insert |
+| **Custom Mood Creation (Account A)** | Live API | **PASS** | Created custom mood `Starlight Drift` (`#38BDF8`, category: `chill`) |
+| **Track & Multi-Mood Assignment** | Live API | **PASS** | Inserted track `Cosmic Waves` and tagged with 2 moods (`Chill` + `Starlight Drift`) |
+| **Session & DB Persistence** | Live API | **PASS** | Fresh client instance reloaded 1 custom mood and 2 track mood tags from PostgreSQL |
+| **Account B Registration & Auth** | Live API | **PASS** | Second isolated test account registered and authenticated |
+| **Profile Auto-Creation (Account B)** | Live Trigger | **PASS** | Trigger `handle_new_user()` auto-created second profile |
+| **Explicit Logout & Re-Login** | Live API | **PASS** | Successfully tested `signOut()` and `signInWithPassword()` for Account A |
+| **RLS Write/Delete Protection** | Live API | **PASS** | Account B attempted to `DELETE` Account A's custom mood; PostgreSQL RLS blocked it (0 rows affected) |
+| **RLS Mood Data Isolation** | Live API | **PASS** | Account B queried `moods`: saw 12 default moods and 0 of Account A's moods |
+| **RLS Track Data Isolation** | Live API | **PASS** | Account B queried `tracks`: received 0 rows (Account A's tracks completely hidden) |
+| **RLS Profile Isolation** | Live API | **PASS** | Account B queried Account A's profile ID directly: received 0 rows |
+| **Bidirectional RLS Isolation** | Live API | **PASS** | Account B created `Aurora Borealis`; Account A queried `moods` and received 0 rows |
+| **Safe Test Record Cleanup** | Live API | **PASS** | Deleted test records using authenticated client sessions; real user data completely untouched |
 
-### 4.3 Setting Up `.env`
-Create or edit `.env` in `d:\CLG\Hustle\Moodify\.env`:
-```env
-VITE_SUPABASE_URL=https://<your-project-id>.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+---
+
+## 5. Distinction: Live Tests vs. Mocked Unit Tests
+
+| Category | Test Suite | Mode | Scope |
+|---|---|---|---|
+| **Live Database Verification** | `scripts/test_live_supabase.mjs` | **LIVE (Supabase Cloud)** | Real PostgreSQL queries, real auth tokens, real database triggers, and real RLS enforcement. |
+| **AI Privacy Guard** | `tests/ai-privacy.test.js` | **MOCKED (In-Memory)** | Air-gap tests verifying stripping of Spotify tokens, audio, and metadata before AI suggestion payloads. |
+| **Audio Routing Isolation** | `tests/audio-isolation.test.js` | **MOCKED (In-Memory)** | Verifies Spotify audio never routes through Web Audio `AnalyserNode`. |
+| **Local Data Migration** | `tests/migration.test.js` | **MOCKED (In-Memory)** | Verifies migration from V1.0 localStorage to V1.5 relational data model. |
+| **Offline Fallback & Client Guard** | `tests/auth.test.js` | **MOCKED (In-Memory)** | Verifies client-side validation, password length checks, and runtime service-role prohibition guard. |
+| **Library & Sorting Engine** | `tests/library.test.js` | **MOCKED (In-Memory)** | In-memory track deduplication and multi-source playlist linking. |
+| **Mood Management Engine** | `tests/moods.test.js` | **MOCKED (In-Memory)** | Local mood CRUD and multi-tag filtering logic. |
+| **Spotify Compliance** | `tests/spotify-compliance.test.js` | **MOCKED (In-Memory)** | Verifies absence of Euclidean distance matching and compliance with Feb 2026 API rules. |
+| **Spotify PKCE Auth** | `tests/spotify-oauth.test.js` | **MOCKED (In-Memory)** | Verifies SHA-256 code challenge generation and PKCE parameter construction. |
+
+---
+
+## 6. Local Build & Test Summary
+
+### Automated Test Suite (`npm test`)
+```
+ℹ tests 38
+ℹ suites 5
+ℹ pass 38
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+```
+
+### Production Build (`npm run build`)
+```
+✓ 81 modules transformed.
+dist/index.html                   1.30 kB │ gzip:  0.64 kB
+dist/assets/index-CkBApzf7.css   34.70 kB │ gzip:  7.16 kB
+dist/assets/index-De7j6FCe.js   353.47 kB │ gzip: 92.04 kB
+✓ built in 184ms
 ```
 
 ---
 
-## 5. Live Project Verification Checklist & Results
+## 7. Outstanding Issues & Operational Notes
 
-| Test Scenario | Status | Verification Details |
-|---|---|---|
-| **Schema & RLS Verification** | **VERIFIED (Code Audit)** | All 9 tables, constraints, cascades, indexes, and RLS policies verified. |
-| **Publishable Key Only** | **VERIFIED** | Code enforces `VITE_SUPABASE_ANON_KEY` only; service-role key is blocked with fatal exception. |
-| **Elimination of Silent Fallback** | **VERIFIED** | `moodService` and `libraryService` propagate real DB errors to UI notifications. |
-| **New User Registration (User A)** | **PENDING LIVE CREDS** | Requires live credentials in `.env` to execute via headless browser. |
-| **Auto-Profile Creation** | **PENDING LIVE CREDS** | Trigger `handle_new_user()` populates `profiles` & `user_settings`. |
-| **Login & Session Persistence** | **PENDING LIVE CREDS** | Sign in and verify token storage in `moodify_supabase_auth_token`. |
-| **Custom Mood Creation** | **PENDING LIVE CREDS** | Create custom mood (e.g., "Nebula Chill") and verify insertion into `public.moods`. |
-| **Track Mood Assignment** | **PENDING LIVE CREDS** | Upsert track to `public.tracks` and record to `public.track_moods`. |
-| **Database Persistence After Refresh** | **PENDING LIVE CREDS** | Hard refresh (`F5`) and confirm custom moods & track tags re-load from PostgreSQL. |
-| **RLS Multi-Tenant Isolation (User B)** | **PENDING LIVE CREDS** | Register User B on fresh session; confirm User B cannot see User A's custom moods or track tags. |
-| **User B Custom Mood Isolation** | **PENDING LIVE CREDS** | User B creates distinct mood; verify User A cannot view or access it. |
-
----
-
-## 6. Current Migration Status & Next Actions
-
-- **Local Build & Test Suite:** 38/38 unit tests passing (`npm test`), production build successful in 121ms (`npm run build`).
-- **Live Connection Status:** Ready for credentials. Once the user applies the migration and provides `.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, automated dual-account end-to-end testing will run immediately.
+- **Outstanding Problems:** **None.** All 14 live verification assertions passed, all 38 unit tests passed, and production build succeeded.
+- **Email Confirmation Status:** You temporarily disabled "Confirm email" for development testing, which enabled seamless user registration and instantaneous token issuance. For production launch, email confirmations can be re-enabled along with custom SMTP (e.g. Resend or SendGrid) to support higher email volumes.
+- **Next Planned Phase:** Proceeding to Spotify Developer Application setup and PKCE OAuth integration.

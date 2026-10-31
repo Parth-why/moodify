@@ -1,0 +1,48 @@
+{
+  "envConfigured": true,
+  "clientInitialized": true,
+  "tableChecks": {
+    "profiles": {
+      "exists": true
+    },
+    "spotify_connections": {
+      "exists": true
+    },
+    "tracks": {
+      "exists": true
+    },
+    "imported_playlists": {
+      "exists": true
+    },
+    "playlist_track_sources": {
+      "exists": true
+    },
+    "moods": {
+      "exists": true
+    },
+    "track_moods": {
+      "exists": true
+    },
+    "user_settings": {
+      "exists": true
+    },
+    "import_jobs": {
+      "exists": true
+    }
+  },
+  "defaultMoodsCheck": true,
+  "connectivity": true,
+  "authAccountA": true,
+  "profileAccountA": true,
+  "customMoodAccountA": true,
+  "trackMoodAccountA": true,
+  "persistenceAfterRefresh": true,
+  "authAccountB": true,
+  "rlsMoodIsolation": true,
+  "rlsTrackIsolation": true,
+  "rlsProfileIsolation": true,
+  "errors": [],
+  "profileAccountB": true,
+  "authLoginLogout": true,
+  "rlsWriteProtection": true
+}
