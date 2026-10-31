@@ -22,7 +22,7 @@ This is the officially recommended flow for single-page web applications because
 3. Fill in the application details:
    * **App name**: `Moodify`
    * **App description**: `Personal mood-driven music universe and emotion discovery platform.`
-   * **Website**: `http://localhost:5173/` (or your production domain)
+   * **Website**: `http://127.0.0.1:5173/` (or your production domain)
    * **Which API/SDKs are you planning to use?**: Select **Web API**.
 4. Check the terms agreement and click **Save**.
 
@@ -32,7 +32,7 @@ This is the officially recommended flow for single-page web applications because
 3. Add the exact redirect URI for your environment:
    * **Local Development**:
      ```
-     http://localhost:5173/
+     http://127.0.0.1:5173/
      ```
    * **Production** (if deploying):
      ```
@@ -49,7 +49,7 @@ This is the officially recommended flow for single-page web applications because
 3. Paste it into your `.env` file:
    ```env
    VITE_SPOTIFY_CLIENT_ID=your_actual_client_id_here
-   VITE_SPOTIFY_REDIRECT_URI=http://localhost:5173/
+   VITE_SPOTIFY_REDIRECT_URI=http://127.0.0.1:5173/
    ```
 
 ---
@@ -68,7 +68,7 @@ This is the officially recommended flow for single-page web applications because
    https://accounts.spotify.com/authorize?
      client_id=...&
      response_type=code&
-     redirect_uri=http://localhost:5173/&
+     redirect_uri=http://127.0.0.1:5173/&
      code_challenge_method=S256&
      code_challenge=...&
      state=...&
@@ -79,7 +79,7 @@ This is the officially recommended flow for single-page web applications because
    │
    ▼
 4. Redirect back to MOODIFY:
-   http://localhost:5173/?code=...&state=...
+   http://127.0.0.1:5173/?code=...&state=...
    │
    ├─► Validates `state` against session storage (CSRF protection)
    ├─► POST to https://accounts.spotify.com/api/token

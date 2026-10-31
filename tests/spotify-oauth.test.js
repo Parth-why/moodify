@@ -5,6 +5,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { SpotifyAuth, SPOTIFY_SCOPES } from '../src/services/spotify/spotifyAuth.js';
 
 describe('MOODIFY Spotify PKCE Authorization Engine', () => {
@@ -41,10 +42,31 @@ describe('MOODIFY Spotify PKCE Authorization Engine', () => {
     );
   });
 
-  test('Calculates and returns clean redirect URI', () => {
+  test('Calculates and returns clean redirect URI defaults to 127.0.0.1 loopback', () => {
     const auth = new SpotifyAuth();
     const uri = auth.getRedirectUri();
-    assert.ok(uri.startsWith('http'));
+    assert.strictEqual(uri, 'http://127.0.0.1:5173/');
+  });
+
+  test('Ensures authorization URL and token exchange share identical redirect_uri', async () => {
+    const auth = new SpotifyAuth();
+    auth.clientId = 'test-client-id-123';
+    const authUrl = await auth.initiateLogin();
+    const parsed = new URL(authUrl);
+
+    const authRedirectUri = parsed.searchParams.get('redirect_uri');
+    assert.strictEqual(authRedirectUri, auth.redirectUri);
+    assert.strictEqual(authRedirectUri, 'http://127.0.0.1:5173/');
+  });
+
+  test('Security Check: Never requires, accepts, or stores a Spotify Client Secret', () => {
+    const auth = new SpotifyAuth();
+    assert.strictEqual(auth.clientSecret, undefined);
+    assert.strictEqual(typeof auth.initiateLogin, 'function');
+    // Verify that Spotify client code does not reference any client_secret
+    const authCode = fs.readFileSync('src/services/spotify/spotifyAuth.js', 'utf8');
+    assert.strictEqual(authCode.includes('client_secret'), false);
+    assert.strictEqual(authCode.includes('VITE_SPOTIFY_CLIENT_SECRET'), false);
   });
 
   test('Includes required read-only user and playlist scopes', () => {

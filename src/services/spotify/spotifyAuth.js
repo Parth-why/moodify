@@ -34,16 +34,22 @@ export const SPOTIFY_SCOPES = [
 
 export class SpotifyAuth {
   constructor() {
-    this.clientId = typeof localStorage !== 'undefined' ? (localStorage.getItem('moodify_spotify_client_id') || import.meta.env?.VITE_SPOTIFY_CLIENT_ID || '') : '';
+    this.clientId = (
+      import.meta.env?.VITE_SPOTIFY_CLIENT_ID || 
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('moodify_spotify_client_id') : '') || 
+      ''
+    ).trim();
     this.redirectUri = this.getRedirectUri();
     this.isAuthenticating = false;
   }
 
   getRedirectUri() {
+    const envUri = import.meta.env?.VITE_SPOTIFY_REDIRECT_URI;
+    if (envUri) return envUri.trim();
     if (typeof window !== 'undefined' && window.location) {
       return `${window.location.origin}${window.location.pathname}`;
     }
-    return 'http://localhost:5173/';
+    return 'http://127.0.0.1:5173/';
   }
 
   setClientId(id) {

@@ -85,7 +85,7 @@ Features where code is 100% complete and tested with mocks, but live remote exec
 1. **Live Spotify PKCE Authorization (`src/services/spotify/spotifyAuth.js`)**
    - PKCE code verifier and challenge generation verified.
    - Token exchange and refresh logic fully implemented.
-   - Requires user's real `VITE_SPOTIFY_CLIENT_ID` configured in Spotify Developer Dashboard with redirect URI `http://localhost:5173/`.
+   - Requires user's real `VITE_SPOTIFY_CLIENT_ID` configured in Spotify Developer Dashboard with redirect URI `http://127.0.0.1:5173/`.
 
 2. **Live Supabase PostgreSQL Remote Sync (`src/services/supabase/supabaseClient.js`)**
    - Schema and migrations verified in `supabase/migrations/`.
